@@ -2,14 +2,15 @@
 import time
 import gradio as gr
 import torch
-
-from gradio import inputs
+import os
+import gradio as gr
 from PIL import Image
 from torchvision import transforms
 from diffusers import AutoencoderKL, DPMSolverMultistepScheduler
 from modules.latent_predictor import LatentEdgePredictor
 from modules.pipeline import AntiGradientPipeline
 
+os.environ["TF_ENABLE_ONEDNN_OPTS"] = "0"
 start_time = time.time()
 scheduler = DPMSolverMultistepScheduler(
     beta_start=0.00085,
@@ -17,7 +18,6 @@ scheduler = DPMSolverMultistepScheduler(
     beta_schedule="scaled_linear",
     num_train_timesteps=1000,
     trained_betas=None,
-    predict_epsilon=True,
     thresholding=False,
     algorithm_type="dpmsolver++",
     solver_type="midpoint",
@@ -25,12 +25,27 @@ scheduler = DPMSolverMultistepScheduler(
 )
 
 last_mode = "txt2img"
+"""
+vae_state_dict = torch.load("./orangemix.vae.pt", map_location="cuda")
+vae = AutoencoderKL()
+vae.load_state_dict(vae_state_dict)
+vae = vae.to(torch.float16).to("cuda")
 
+"""
 vae = AutoencoderKL.from_pretrained(
-    "runwayml/stable-diffusion-v1-5", subfolder="vae", torch_dtype=torch.float16
+    "benjamin-paine/stable-diffusion-v1-5", subfolder="vae", torch_dtype=torch.float16
 )
+from safetensors.torch import save_file, load_file
+import torch
+
+# Load the .bin file
+bin_weights = torch.load("./AbyssOrangeMix_directory/unet/diffusion_pytorch_model.bin")
+
+# Save as .safetensors
+save_file(bin_weights, "./AbyssOrangeMix_directory/unet/diffusion_pytorch_model.safetensors")
+
 pipe_t2i = AntiGradientPipeline.from_pretrained(
-    "/root/workspace/storage/models/orangemix",
+    "./AbyssOrangeMix_directory",
     vae=vae,
     torch_dtype=torch.float16,
     scheduler=scheduler,
@@ -40,7 +55,7 @@ pipe = pipe_t2i
 
 # inject
 unet = pipe.unet
-unet.enable_xformers_memory_efficient_attention()
+#unet.enable_xformers_memory_efficient_attention()
 
 if torch.cuda.is_available():
     pipe = pipe.to("cuda")
@@ -65,7 +80,7 @@ transforms = transforms.Compose(
 )
 
 lgp =  LatentEdgePredictor(9320, 4, 9)
-lgp.load_state_dict(torch.load("/root/workspace/sketch2img/edge_predictor.pt"))
+lgp.load_state_dict(torch.load("./edge_predictor.pt"))
 lgp.to(unet.device, dtype=unet.dtype)
 pipe.setup_lgp(lgp)
 
@@ -198,7 +213,12 @@ with gr.Blocks(css=css) as demo:
 
             with gr.Tab("SketchPad"):
                 with gr.Group():
-                    sp = gr.Sketchpad(shape=(512, 512), tool="sketch")
+                    sp = gr.Sketchpad(
+                        label="SketchPad",  # Optional label for the SketchPad
+                        height=512,         # Height of the SketchPad
+                        width=512,          # Width of the SketchPad
+                        
+                    )
 
                     strength = gr.Slider(
                         label="Transformation strength",
@@ -208,20 +228,33 @@ with gr.Blocks(css=css) as demo:
                         value=0.5,
                     )
 
-    inputs = [
-        prompt,
-        guidance,
-        steps,
-        width,
-        height,
-        seed,
-        strength,
-        neg_prompt,
-        sp,
-    ]
-    outputs = [image_out, error_output]
-    prompt.submit(inference, inputs=inputs, outputs=outputs)
-    generate.click(inference, inputs=inputs, outputs=outputs)
 
+inputs = [
+    gr.Textbox(label="Prompt", placeholder="Enter your prompt."),
+    gr.Slider(label="Guidance Scale", minimum=1, maximum=20, value=7.5),
+    gr.Slider(label="Steps", minimum=2, maximum=75, value=25),
+    gr.Slider(label="Width", minimum=64, maximum=1024, value=512, step=8),
+    gr.Slider(label="Height", minimum=64, maximum=1024, value=512, step=8),
+    gr.Slider(label="Seed", minimum=0, maximum=2147483647, value=0, step=1),
+    gr.Slider(
+        label="Transformation Strength",
+        minimum=0,
+        maximum=1,
+        value=0.5,
+        step=0.01,
+    ),
+    gr.Textbox(label="Negative Prompt", placeholder="Enter negative prompt."),
+    gr.Sketchpad(
+                        label="SketchPad",  # Optional label for the SketchPad
+                        height=512,         # Height of the SketchPad
+                        width=512,          # Width of the SketchPad
+                        
+                    ),
+]
+
+outputs = [
+    gr.Image(label="Generated Image"),
+    gr.Markdown(label="Error Output"),
+]
 print(f"Space built in {time.time() - start_time:.2f} seconds")
 demo.launch(debug=True, share=False)

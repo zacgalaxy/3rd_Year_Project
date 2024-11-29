@@ -13,7 +13,7 @@ from accelerate import Accelerator, DistributedDataParallelKwargs
 from accelerate.utils import set_seed
 from anime2sketch.model import create_model
 from modules.dataset import ImageStore
-from sketch2img.modules.clip_guided_attn import SatMixin
+from modules.clip_guided_attn import SatMixin
 from omegaconf import OmegaConf
 from tqdm import tqdm
 from transformers import CLIPTokenizer, CLIPVisionModel, CLIPImageProcessor
@@ -97,7 +97,7 @@ def train():
     del pipe
 
     # モデルに xformers とか memory efficient attention を組み込む
-    unet.enable_xformers_memory_efficient_attention()
+    #unet.enable_xformers_memory_efficient_attention()
 
     # prepare network
     sat_model = SatMixin(unet)
